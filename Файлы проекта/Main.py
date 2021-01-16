@@ -97,7 +97,7 @@ class Particle(pygame.sprite.Sprite):  # Частичка крови
 
 
 class Interface(pygame.sprite.Sprite):  # Интерфейс
-    def __init__(self, start_x, start_y, width, height, First_line):
+    def __init__(self, start_x, start_y, width, height, First_line, Big_font):
         self.width = width
         self.height = height
         self.x = start_x
@@ -105,16 +105,23 @@ class Interface(pygame.sprite.Sprite):  # Интерфейс
         self.fl = First_line
         self.image = pygame.Surface([start_x, start_y])
         self.rect = pygame.Rect(start_x, start_y, width, height)
+        if Big_font:
+            self.fontsize = 50
+            self.gap = 80
+        else:
+            self.fontsize = 30
+            self.gap = 40
 
     def render(self, screen, render_thing):  # Выводим нужную информацию
         Text = self.fl
-        font = pygame.font.Font("Data/justicelaser.ttf", 30)
+        font = pygame.font.Font("Data/justicelaser.ttf", self.fontsize)
         text = font.render(Text, 1, (255, 255, 255))
         screen.blit(text, (self.x, self.y))
         text = font.render(render_thing, 1, (255, 255, 255))
         x = self.x
-        y = self.y + 40
+        y = self.y + self.gap
         screen.blit(text, (x, y))
+
 
 
 class Cursor(pygame.sprite.Sprite):  # Курсор
@@ -216,6 +223,9 @@ class Player(MoveObject):  # Класс игрока
 
 score = 0  # Создаём для адекватной работы системы очков
 
+Player_death_x = 0
+Player_death_y = 0
+
 
 class Enemy(MoveObject):  # Противник
     def __init__(self):
@@ -267,8 +277,13 @@ class Enemy(MoveObject):  # Противник
             Bullet(self.rect.centerx, self.rect.centery, x, y, self, 50, slow_mo)
 
     def update(self):
+        global Player_death_x, Player_death_y
         if pygame.sprite.spritecollide(self, Players, True):  # если игрок пересекается с врагом, то он умирает
-            pass
+            numbers = range(-5, 6)
+            Player_death_x = self.rect.centerx
+            Player_death_y = self.rect.centery
+            for _ in range(30):
+                Particle((self.rect.centerx, self.rect.centery), random.choice(numbers), random.choice(numbers))
         if self.rect.centerx > self.distancex:
             self.rect.centerx -= 1
         if self.rect.centerx < self.distancex:
@@ -307,7 +322,7 @@ class Bullet(MoveObject):  # Пуля
         self.Bullets.remove(self)
 
     def update(self):
-        global score
+        global score, Player_death_x, Player_death_y
         # Признаюсь сразу - не лучшая формула для того, чтобы просчитать полёт снаряда
         # Я бы давно её исправил, но есть проблема - я сам не знаю как я составил эту формулу
         # Просто в один момент она возникла у меня в голове, и я попробовал её
@@ -328,6 +343,11 @@ class Bullet(MoveObject):  # Пуля
             score += 100
             self.kill()
         if pygame.sprite.spritecollide(self, self.Players, True):  # Если Попадаем по игроку, то убиваем его
+            numbers = range(-5, 6)
+            Player_death_x = self.rect.centerx
+            Player_death_y = self.rect.centery
+            for _ in range(30):
+                Particle((self.rect.centerx, self.rect.centery), random.choice(numbers), random.choice(numbers))
             self.kill()
         if pygame.sprite.spritecollide(self, self.Bullets, True):  # Если по пули, то удаляем её, и добавляем очки
             score += 50
@@ -358,7 +378,7 @@ cursor = Cursor(Cursors)
 
 
 def main_game():  # Главная игра
-    global score
+    global score, Player_death_x, Player_death_y
     score = 0  # Обнуляем очки
     # Удаляем оставшихся на карте объекты
     for enemy in Enemys:
@@ -367,6 +387,8 @@ def main_game():  # Главная игра
         part.kill()
     for bullets in Bullets:
         bullets.kill()
+    for player in Players:
+        player.kill()
     pygame.display.flip()
     # Создаём игрока
     player = Player()
@@ -381,8 +403,8 @@ def main_game():  # Главная игра
     Horizontal_Down.add(InvinsibleLine([95, 700], [617, 700], 2))
     image = load_image("map_fon.png")
     # Рисуем интерфейс, а конкретно - Стамину и количество патронов
-    stamina = Interface(664, 200, 50, 50, "Stamina")
-    bullets = Interface(664, 300, 50, 50, "Bullets")
+    stamina = Interface(664, 200, 50, 50, "Stamina", False)
+    bullets = Interface(664, 300, 50, 50, "Bullets", False)
     # переменная для проверки слоумо
     Slow_mo = False
     while player.alive():
@@ -463,7 +485,45 @@ def main_game():  # Главная игра
         if player.durability < 100 and second % 5 == 0:
             print(player.durability)
             player.durability += 1
-    return score
+    restart = Interface(240, 320, 100, 100, "Score - " + str(score), True)
+    music_restart("Data/Game_over_song.mp3")
+    death = load_image("dead_player.png")
+    while True:
+        screen.blit(death, (Player_death_x, Player_death_y))
+        second += 1
+        for enemy in Enemys:
+            if second % 100 == 0 and not enemy.starting:
+                enemy.move()
+                enemy.rotate(enemy.distancex, enemy.distancey)
+            if second % random.randint(70, 150) == 0 and not enemy.starting:
+                enemy.shoot(player.rect.centerx, player.rect.centery, player, Slow_mo)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                for sound in all_sounds:
+                    sound.stop()
+                return False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    return True
+                elif event.key == pygame.K_ESCAPE:
+                    return False
+            if event.type == pygame.MOUSEMOTION:
+                if pygame.mouse.get_focused():
+                    cursor.update(event.pos)
+        all_sprites.draw(screen)
+        if pygame.mouse.get_focused():
+            Cursors.draw(screen)
+            pygame.mouse.set_visible(False)
+        all_sprites.update()
+        Blood.update()
+        Bullets.update()
+        restart.render(screen, "Restart - R")
+        pygame.display.flip()
+        screen.blit(image, (0, 0))
+        clock.tick(Fps)
+        if second % 200 == 0 and len(Enemys) < 6:
+            for _ in range(6 - len(Enemys)):
+                Enemys.add(Enemy())
     pygame.quit()
 
 
@@ -477,7 +537,7 @@ def start_screen():  # Заставка, по своей логике идиен
                   "WASD     -     Ходить,     Shift     -     Бег",
                   "R     -     Перезарядка",
                   "Левая кнопка мыши     -     Стрелять"
-        , "Правая кнопка мыши     -     Замедление    вв Времени"]
+        , "Правая кнопка мыши     -     Замедление     Времени"]
 
     fon = pygame.transform.scale(load_image('menu_fon.jpg'), (WIDTH, HEIGHT))
     screen.blit(fon, (0, 0))
@@ -505,54 +565,11 @@ def start_screen():  # Заставка, по своей логике идиен
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 terminate()
-            elif event.type == pygame.KEYDOWN or \
-                    event.type == pygame.MOUSEBUTTONDOWN:
-                return  # начинаем игру
-        if pygame.mouse.get_focused():
-            pygame.mouse.set_visible(False)
-        pygame.display.flip()
-        clock.tick(Fps)
-
-
-def game_over(score):  # Заставка конца игры, по своей логике идиентична примеру в уроке
-    game_name = "Game Over"
-    intro_text = ["Ваши  очки: ", " ",
-                  str(score),
-                  "",
-                  "R - Начать с начала",
-                  "",
-                  "Спасибо  за   игру!"]
-
-    fon = pygame.transform.scale(load_image('game_over_fon.jpg'), (WIDTH, HEIGHT))
-    screen.blit(fon, (0, 0))
-    font = pygame.font.Font('Data/justicelaser.ttf', 50)
-    string_rendered = font.render(game_name, 1, pygame.Color('white'))
-    intro_rect = string_rendered.get_rect()
-    text_coord = 200
-    intro_rect.top = text_coord
-    intro_rect.x = WIDTH // 2 - string_rendered.get_width() // 2
-    text_coord += intro_rect.height
-    screen.blit(string_rendered, (intro_rect.x, 130))
-    text_coord = 300
-
-    font = pygame.font.Font('Data/rules_font.ttf', 20)
-    for line in intro_text:
-        string_rendered = font.render(line, 1, pygame.Color('white'))
-        intro_rect = string_rendered.get_rect()
-        text_coord += 10
-        intro_rect.top += text_coord
-        intro_rect.x = WIDTH // 2 - string_rendered.get_width() // 2
-        text_coord += intro_rect.height
-        screen.blit(string_rendered, intro_rect)
-
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                terminate()
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                return 'Not restart'
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                return "restart"  # начинаем игру
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return False  # начинаем игру
+                elif event.key == pygame.K_RETURN:
+                    return True
         if pygame.mouse.get_focused():
             pygame.mouse.set_visible(False)
         pygame.display.flip()
@@ -566,17 +583,15 @@ def music_restart(music):  # чтобы не повторять нескольк
 
 
 if __name__ == "__main__":
-    # по очереди запускаем стартовый экран, саму игру а так же экран конца игры
-    music_restart("Data/title_song.mp3")
-    start_screen()
-    # выбираем случайную боевую музыку
-    music_restart(random.choice(battle_music))
-    score = main_game()  # получаем очки
-    while True:
-        music_restart("Data/Game_over_song.mp3")
-        if game_over(score) == "restart":  # Ресуем очки, а так же если игрок решает перезапустить игру
-            # то мы её перезапускаем
+    play = True
+    while play:
+        # по очереди запускаем стартовый экран, саму игру
+        music_restart("Data/title_song.mp3")
+        play = start_screen()
+        # выбираем случайную боевую музыку
+        if play:
             music_restart(random.choice(battle_music))
-            score = main_game()
-        else:
-            break
+            restart = main_game()  # получаем очки
+            while restart:
+                music_restart(random.choice(battle_music))
+                restart = main_game()
